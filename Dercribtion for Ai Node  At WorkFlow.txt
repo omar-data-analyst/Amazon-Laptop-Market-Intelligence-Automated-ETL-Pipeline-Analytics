@@ -1,0 +1,41 @@
+Extract technical specifications and classify these 24 laptop titles into a raw JSON array.
+
+Input titles:
+{{ $json.all_titles }}
+
+Return strictly a JSON array of objects with the following schema:
+- "index": (number 1 to 24)
+- "brand": (e.g., "Lenovo", "Apple", "HP", "ASUS", or null if unknown)
+- "cpu": (e.g., "Core i5-13450HX", "M3", "Core Ultra 7", or null)
+- "cpu_brand": (e.g., "Intel", "AMD", "Apple", or null)
+- "cpu_series": (e.g., "i3", "i5", "i7", "i9", "Ultra 5", "Ultra 7", "Ultra 9", "Ryzen 5", "Ryzen 7", "M1", "M2", "M3", or null)
+- "ram": (e.g., "16GB", "8GB", or null)
+- "storage": (e.g., "512GB SSD", "1TB SSD", or null)
+- "gpu": (e.g., "RTX 3050", "Intel Arc Graphics", "Intel UHD Graphics", "M3 10-core GPU", or null)
+- "gpu_brand": (e.g., "NVIDIA", "Intel", "AMD", "Apple", or null)
+- "screen_size": (e.g., "15.6 Inch", "14.0 Inch", "13.3 Inch", "16.0 Inch", or null)
+- "refresh_rate": (e.g., "144Hz", "60Hz", or null)
+- "operating_system": (e.g., "Windows 11", "macOS", "DOS", or null)
+- "performance_tier": (Must be strictly one of: "Flagship", "High-Performance", "Mid-Range", "Budget", or null)
+- "primary_use": (Must be strictly one of: "Gaming", "Content Creation", "Business / Daily", or null)
+
+Rules:
+1. Extract values strictly from the provided text. If a detail is missing, set its value to null. Do not invent specs.
+2. Multilingual & Terminology Normalization:
+   - Input titles may contain Arabic text or translated technical terms (e.g., 'رام' for RAM, 'بوصة' or 'سم' for screen units, 'شاشة' for screen).
+   - Translate and normalize all extracted values into English in the final JSON.
+3. Screen Size Normalization:
+   - Normalize strictly to "X.X Inch" (e.g., "15.6 Inch").
+   - If mentioned in centimeters (cm), convert to inches (divide cm by 2.54 and round to 1 decimal place. Examples: 39.6 cm -> "15.6 Inch", 35.5 cm -> "14.0 Inch", 33.7 cm -> "13.3 Inch", 40.6 cm -> "16.0 Inch").
+4. Intel GPU Inference Correction:
+   - If the CPU is Intel Core Ultra and no dedicated GPU (e.g., RTX/GTX) is present, set "gpu" to "Intel Arc Graphics" or "Intel Graphics". Do NOT set it to "Intel UHD Graphics".
+5. "performance_tier" Classification Logic:
+   - "Flagship": High-end GPUs (e.g., RTX 4080/4090/5070/5080/5090) OR top-tier CPUs (i9 / Ultra 9 / Ryzen 9 / M3 Max / M4 Max / M5 Max).
+   - "High-Performance": Dedicated mid-to-high GPUs (e.g., RTX 3060/4050/4060/4070/5060) OR high-tier CPUs (i7 / Ultra 7 / Ryzen 7 / M3 Pro / M4 Pro / M5 Pro).
+   - "Mid-Range": Dedicated entry GPUs (e.g., GTX 1650/RTX 2050/3050) OR mid-tier CPUs (i5 / Ultra 5 / Ryzen 5 / Base M1-M5) from recent generations (Intel 11th Gen or newer).
+   - "Budget": Integrated graphics WITH i3/Ryzen 3/Celeron/Pentium OR legacy/older CPUs (Intel 10th Gen or older, e.g., i5-10310U).
+6. "primary_use" Classification Logic:
+   - "Gaming": Laptops with high refresh rates (>=120Hz) OR dedicated RTX/GTX GPUs, unless it is explicitly a MacBook or Workstation.
+   - "Content Creation": MacBooks, Workstations, or laptops with OLED/High-res screens + High RAM (>=16GB) + RTX GPUs aimed at creators.
+   - "Business / Daily": Laptops with integrated graphics and standard 60Hz screens, aimed at office, general, or student use.
+7. Return ONLY the valid raw JSON array. Do not include markdown code blocks (e.g. ```json), introductory text, or explanations.

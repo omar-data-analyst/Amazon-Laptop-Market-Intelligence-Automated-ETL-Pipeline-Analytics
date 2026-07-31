@@ -1,0 +1,415 @@
+{
+  "name": "Scraping & Automation Amazon laptops market Data",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "={{ $json.pageUrl }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        688,
+        96
+      ],
+      "id": "f7bf80f1-d2bb-4651-8d07-1e49f246449a",
+      "name": "Extract Html Code of page"
+    },
+    {
+      "parameters": {
+        "jsCode": "const MAX_PAGES = 0;\nconst baseUrl = \"https://www.amazon.eg/s?i=electronics&rh=n%3A21832907031&fs=true\";\nconst results = [];\n\nfor (let currentPage = 1; currentPage <= MAX_PAGES; currentPage++) {\n    results.push({\n        json: {\n            page: currentPage,\n            pageUrl: `${baseUrl}&page=${currentPage}`\n        }\n    });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        0
+      ],
+      "id": "ef27f279-1bcd-4ca6-b084-5373e77acca9",
+      "name": "Generate Link of each page"
+    },
+    {
+      "parameters": {
+        "jsCode": "// جلب HTML من العقدة الحالية\nconst htmlContent = $input.first().json.data || $input.first().json.body || \"\";\n\n// التأكد مما إذا كانت الصفحة صفحة حماية (Bot Detection)\nif (htmlContent.includes(\"validateCaptcha\") || htmlContent.includes(\"robot check\")) {\n    throw new Error(\"تم حظر الطلب بواسطة Amazon Captcha! يرجى تغيير الـ User-Agent أو استخدام Proxy.\");\n}\n\n// تقسيم الصفحة إلى أجزاء المنتجات\nconst blocks = htmlContent.split('data-component-type=\"s-search-result\"').slice(1);\nconst results = [];\n\nblocks.forEach(block => {\n    // 1. استخراج عنوان المنتج\n    const titleMatch = block.match(/<h2[^>]*>[\\s\\S]*?<span[^>]*>([\\s\\S]*?)<\\/span>/i) ||\n                       block.match(/class=\"a-text-normal\"[^>]*>([\\s\\S]*?)<\\/span>/i);\n    \n    let title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : null;\n    if (title) {\n        title = title.replace(/&quot;/g, '\"').replace(/&amp;/g, '&').replace(/&#x27;/g, \"'\");\n    }\n\n    // 2. استخراج السعر بدقة عالية\n    let price = null;\n    \n    // محاولة التقاط السعر المباشر من a-offscreen أو a-price-whole\n    const priceOffscreen = block.match(/class=\"a-offscreen\">([^<]+)<\\/span>/i);\n    const priceWhole = block.match(/class=\"a-price-whole\">([^<]+)/i);\n    const priceGeneral = block.match(/(?:EGP|جنيه|ج\\.م)\\s*([\\d,٫\\.]+)/i) || block.match(/([\\d,٫\\.]+)\\s*(?:EGP|جنيه|ج\\.م)/i);\n\n    let rawPriceStr = \"\";\n    if (priceOffscreen && priceOffscreen[1]) {\n        rawPriceStr = priceOffscreen[1];\n    } else if (priceWhole && priceWhole[1]) {\n        rawPriceStr = priceWhole[1];\n    } else if (priceGeneral && priceGeneral[1]) {\n        rawPriceStr = priceGeneral[1];\n    }\n\n    if (rawPriceStr) {\n        let cleanPriceStr = rawPriceStr\n            .replace(/٫/g, '.')\n            .replace(/,/g, '')\n            .replace(/[^0-9.]/g, '');\n            \n        let parsedPrice = parseFloat(cleanPriceStr);\n        if (!isNaN(parsedPrice) && parsedPrice > 0) {\n            price = parsedPrice;\n        }\n    }\n\n    // 3. استخراج التقييم\n    let rating = null;\n    const ratingMatch = block.match(/([0-9.]+)\\s*(out of 5 stars|من 5 نجوم)/i) || \n                        block.match(/class=\"a-icon-alt\">([^<]+)<\\/span>/i);\n    \n    if (ratingMatch) {\n        const numMatch = ratingMatch[0].match(/([0-9.]+)/);\n        rating = numMatch ? parseFloat(numMatch[1]) : null;\n    }\n\n    // 4. استخراج حالة المخزون\n    let stockStatus = \"Available\";\n    const stockMatch = block.match(/Only\\s*\\d+\\s*left in stock/i) || \n                       block.match(/متبقي\\s*\\d+\\s*فقط/i);\n    \n    if (stockMatch) {\n        stockStatus = stockMatch[0].trim();\n    }\n\n    // 5. استخراج رابط المنتج\n    const urlMatch = block.match(/href=\"(\\/dp\\/[^\"?\\s]+|\\/[^\"?\\s]+\\/dp\\/[^\"?\\s]+)\"/i);\n    let url = urlMatch ? `https://www.amazon.eg${urlMatch[1]}` : null;\n\n    if (title) {\n        results.push({\n            json: {\n                title: title,\n                price_EGP: price,\n                rating: rating,\n                stock: stockStatus,\n                url: url\n            }\n        });\n    }\n});\n\nconst titlesList = results.map((item, index) => `${index + 1}. ${item.json.title}`).join(\"\\n\");\n\nreturn [{\n    json: {\n        all_titles: titlesList,\n        raw_products: results\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        96
+      ],
+      "id": "bb516d6d-4923-4f93-b34d-f37cd53ae54a",
+      "name": "Extract Data of Page"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        1088
+      ],
+      "id": "96b75600-4429-42d2-bb36-97fbbdc9e6c7",
+      "name": "Wait",
+      "webhookId": "8f2ee7f0-096a-43fe-84c0-c793b4b2768d"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1QKR7CTHHDOTr4cqiOlyPgI_RDon27z-hlNJNxRq6J8c",
+          "mode": "list",
+          "cachedResultName": "Labtobs Data",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1QKR7CTHHDOTr4cqiOlyPgI_RDon27z-hlNJNxRq6J8c/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1QKR7CTHHDOTr4cqiOlyPgI_RDon27z-hlNJNxRq6J8c/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "brand",
+              "displayName": "brand",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "cpu",
+              "displayName": "cpu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ram",
+              "displayName": "ram",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "storage",
+              "displayName": "storage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "gpu",
+              "displayName": "gpu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "refresh_rate",
+              "displayName": "refresh_rate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "price_EGP",
+              "displayName": "price_EGP",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "rating",
+              "displayName": "rating",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "stock",
+              "displayName": "stock",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1616,
+        176
+      ],
+      "id": "159cf9aa-4ca4-4a72-80d2-63229acd323f",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "FneRi6ONdYQToU4R",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => {\n  const newItem = { ...item.json };\n  \n  delete newItem.title;\n  \n  return {\n    json: newItem\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        176
+      ],
+      "id": "c43f93e0-d247-416f-a503-38f34e04b00d",
+      "name": "Remove Title Column"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-flash-latest",
+          "mode": "list",
+          "cachedResultName": "models/gemini-flash-latest"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Extract technical specifications and classify these 24 laptop titles into a raw JSON array.\n\nInput titles:\n{{ $json.all_titles }}\n\nReturn strictly a JSON array of objects with the following schema:\n- \"index\": (number 1 to 24)\n- \"brand\": (e.g., \"Lenovo\", \"Apple\", \"HP\", \"ASUS\", or null if unknown)\n- \"cpu\": (e.g., \"Core i5-13450HX\", \"M3\", \"Core Ultra 7\", or null)\n- \"cpu_brand\": (e.g., \"Intel\", \"AMD\", \"Apple\", or null)\n- \"cpu_series\": (e.g., \"i3\", \"i5\", \"i7\", \"i9\", \"Ultra 5\", \"Ultra 7\", \"Ultra 9\", \"Ryzen 5\", \"Ryzen 7\", \"M1\", \"M2\", \"M3\", or null)\n- \"ram\": (e.g., \"16GB\", \"8GB\", or null)\n- \"storage\": (e.g., \"512GB SSD\", \"1TB SSD\", or null)\n- \"gpu\": (e.g., \"RTX 3050\", \"Intel Arc Graphics\", \"Intel UHD Graphics\", \"M3 10-core GPU\", or null)\n- \"gpu_brand\": (e.g., \"NVIDIA\", \"Intel\", \"AMD\", \"Apple\", or null)\n- \"screen_size\": (e.g., \"15.6 Inch\", \"14.0 Inch\", \"13.3 Inch\", \"16.0 Inch\", or null)\n- \"refresh_rate\": (e.g., \"144Hz\", \"60Hz\", or null)\n- \"operating_system\": (e.g., \"Windows 11\", \"macOS\", \"DOS\", or null)\n- \"performance_tier\": (Must be strictly one of: \"Flagship\", \"High-Performance\", \"Mid-Range\", \"Budget\", or null)\n- \"primary_use\": (Must be strictly one of: \"Gaming\", \"Content Creation\", \"Business / Daily\", or null)\n\nRules:\n1. Extract values strictly from the provided text. If a detail is missing, set its value to null. Do not invent specs.\n2. Multilingual & Terminology Normalization:\n   - Input titles may contain Arabic text or translated technical terms (e.g., 'رام' for RAM, 'بوصة' or 'سم' for screen units, 'شاشة' for screen).\n   - Translate and normalize all extracted values into English in the final JSON.\n3. Screen Size Normalization:\n   - Normalize strictly to \"X.X Inch\" (e.g., \"15.6 Inch\").\n   - If mentioned in centimeters (cm), convert to inches (divide cm by 2.54 and round to 1 decimal place. Examples: 39.6 cm -> \"15.6 Inch\", 35.5 cm -> \"14.0 Inch\", 33.7 cm -> \"13.3 Inch\", 40.6 cm -> \"16.0 Inch\").\n4. Intel GPU Inference Correction:\n   - If the CPU is Intel Core Ultra and no dedicated GPU (e.g., RTX/GTX) is present, set \"gpu\" to \"Intel Arc Graphics\" or \"Intel Graphics\". Do NOT set it to \"Intel UHD Graphics\".\n5. \"performance_tier\" Classification Logic:\n   - \"Flagship\": High-end GPUs (e.g., RTX 4080/4090/5070/5080/5090) OR top-tier CPUs (i9 / Ultra 9 / Ryzen 9 / M3 Max / M4 Max / M5 Max).\n   - \"High-Performance\": Dedicated mid-to-high GPUs (e.g., RTX 3060/4050/4060/4070/5060) OR high-tier CPUs (i7 / Ultra 7 / Ryzen 7 / M3 Pro / M4 Pro / M5 Pro).\n   - \"Mid-Range\": Dedicated entry GPUs (e.g., GTX 1650/RTX 2050/3050) OR mid-tier CPUs (i5 / Ultra 5 / Ryzen 5 / Base M1-M5) from recent generations (Intel 11th Gen or newer).\n   - \"Budget\": Integrated graphics WITH i3/Ryzen 3/Celeron/Pentium OR legacy/older CPUs (Intel 10th Gen or older, e.g., i5-10310U).\n6. \"primary_use\" Classification Logic:\n   - \"Gaming\": Laptops with high refresh rates (>=120Hz) OR dedicated RTX/GTX GPUs, unless it is explicitly a MacBook or Workstation.\n   - \"Content Creation\": MacBooks, Workstations, or laptops with OLED/High-res screens + High RAM (>=16GB) + RTX GPUs aimed at creators.\n   - \"Business / Daily\": Laptops with integrated graphics and standard 60Hz screens, aimed at office, general, or student use.\n7. Return ONLY the valid raw JSON array. Do not include markdown code blocks (e.g. ```json), introductory text, or explanations."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        1008,
+        96
+      ],
+      "id": "7713bf3b-b91e-4013-8093-7fe1e4029de9",
+      "name": "Extract Info from Title Column",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "9fZq4kTxSJCYKGcN",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        496,
+        0
+      ],
+      "id": "af42d7f2-f739-480e-8d8d-075e72742e38",
+      "name": "Loop Over Link Page"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. استخراج نص الذكاء الاصطناعي\nconst inputJson = $input.first().json;\nlet rawText = inputJson.text || inputJson.output || (inputJson.content?.parts?.[0]?.text) || \"\";\n\nif (typeof rawText === 'object') {\n    rawText = JSON.stringify(rawText);\n}\n\n// 2. تنظيف نص الـ JSON القادم من الذكاء الاصطناعي\nlet cleanText = String(rawText).replace(/```json/gi, '').replace(/```/g, '').trim();\n\nlet parsedData = [];\ntry {\n    parsedData = JSON.parse(cleanText);\n} catch (e) {\n    const match = cleanText.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]/);\n    if (match) {\n        try { parsedData = JSON.parse(match[0]); } catch (err) {}\n    }\n}\n\nif (!Array.isArray(parsedData)) parsedData = [];\n\n// 3. جلب وتجميع كافة المنتجات من كل الصفحات (.all()) بشكل مرن\nlet rawProducts = [];\ntry {\n    const allExtractItems = $(\"Extract Data of Page\").all();\n    allExtractItems.forEach(item => {\n        const itemData = item.json;\n        if (itemData) {\n            // حالة 1: البيانات داخل مصفوفة raw_products\n            if (Array.isArray(itemData.raw_products)) {\n                rawProducts = rawProducts.concat(itemData.raw_products);\n            } \n            // حالة 2: البيانات داخل عنصر raw_products مفرد\n            else if (itemData.raw_products && typeof itemData.raw_products === 'object') {\n                rawProducts.push(itemData.raw_products);\n            }\n            // حالة 3: العنصر نفسه يحتوي على بيانات المنتج مباشرة\n            else if (itemData.title || itemData.price_EGP !== undefined) {\n                rawProducts.push(itemData);\n            }\n        }\n    });\n} catch (err) {\n    rawProducts = [];\n}\n\n// 4. الدمج واستخراج النتيجة النهائية\nconst finalRows = parsedData.map((aiSpecs, index) => {\n    // جلب المنتج المقابل مع دعم الـ Index\n    const rawItem = rawProducts[index] || {};\n    const productData = rawItem.json ? rawItem.json : rawItem;\n\n    // استخراج وتنظيف السعر (price_EGP) وإرجاعه كنص لتفادي مشاكل BigQuery\n    let rawPrice = productData.price_EGP ?? productData.price ?? null;\n    let priceStr = null;\n    \n    if (rawPrice !== null && rawPrice !== undefined) {\n        if (typeof rawPrice === 'number') {\n            priceStr = String(rawPrice);\n        } else if (typeof rawPrice === 'string') {\n            priceStr = rawPrice.replace(/[^0-9.]/g, '') || null;\n        }\n    }\n\n    // استخراج التقييم (rating) وتحويله لنص\n    let rating = productData.rating !== undefined && productData.rating !== null ? String(productData.rating) : null;\n\n    // استخراج حالة التوفر (stock)\n    let stock = productData.stock || productData.availability || null;\n\n    return {\n        json: {\n            brand: aiSpecs.brand || null,\n            \n            // بيانات المعالج\n            cpu: aiSpecs.cpu || null,\n            cpu_brand: aiSpecs.cpu_brand || null,\n            cpu_series: aiSpecs.cpu_series || null,\n            \n            ram: aiSpecs.ram || null,\n            storage: aiSpecs.storage || null,\n            \n            // بيانات كارت الشاشة\n            gpu: aiSpecs.gpu || null,\n            gpu_brand: aiSpecs.gpu_brand || null,\n            \n            // المواصفات ونظام التشغيل\n            screen_size: aiSpecs.screen_size || null,\n            refresh_rate: aiSpecs.refresh_rate || null,\n            operating_system: aiSpecs.operating_system || null,\n            \n            // بيانات متجر أمازون المباشرة\n            price_EGP: priceStr,\n            rating: rating,\n            stock: stock ? String(stock) : null,\n            url: productData.url || null,\n\n            // التصنيفات الجديدة القادمة من نموذج الذكاء الاصطناعي\n            performance_tier: aiSpecs.performance_tier || null,\n            primary_use: aiSpecs.primary_use || null\n        }\n    };\n});\n\nreturn finalRows;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        96
+      ],
+      "id": "cc592d2e-b55f-452d-8a34-03dac81986be",
+      "name": "From Json  to Table"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        144,
+        -48
+      ],
+      "id": "45853b04-4ec2-4c97-b1da-080e3dcae984",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Extract Html Code of page": {
+      "main": [
+        [
+          {
+            "node": "Extract Data of Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Link of each page": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Link Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Data of Page": {
+      "main": [
+        [
+          {
+            "node": "Extract Info from Title Column",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        []
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Link Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remove Title Column": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Info from Title Column": {
+      "main": [
+        [
+          {
+            "node": "From Json  to Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Link Page": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Extract Html Code of page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "From Json  to Table": {
+      "main": [
+        [
+          {
+            "node": "Remove Title Column",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Generate Link of each page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "6cd6c96e-5588-4b3f-8929-33174f3cc7c7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "cc8a12dc31f868768140ca168144a77f3479661587bccc3efe74db9dc802dd43"
+  },
+  "nodeGroups": [],
+  "id": "Ab7XQaB5622dlgc2",
+  "tags": []
+}
