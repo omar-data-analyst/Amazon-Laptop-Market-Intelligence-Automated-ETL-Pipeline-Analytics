@@ -1,0 +1,2 @@
+# Amazon-Laptop-Market-Intelligence-Automated-ETL-Pipeline-Analytics
+An end-to-end data project featuring an automated ETL pipeline built with n8n. It uses an AI/LLM node to instantly extract laptop market data from Amazon search pages—skipping deep page scrapes. Cleaned data flows directly into Google BigQuery and Google Sheets, feeding an interactive Looker Studio dashboard for real-time market insights.
